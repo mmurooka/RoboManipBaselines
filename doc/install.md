@@ -107,6 +107,8 @@ See [here](./real_ur5e.md) for instructions on how to operate real robot.
 ### [Real xArm7 environments](../robo_manip_baselines/envs/real/xarm7)
 Install dependent libraries including [gello_software](https://github.com/wuphilipp/gello_software):
 ```console
+$ sudo apt-get install libboost-all-dev
+
 # Go to the top directory of this repository
 $ pip install -e .[real-xarm7]
 
