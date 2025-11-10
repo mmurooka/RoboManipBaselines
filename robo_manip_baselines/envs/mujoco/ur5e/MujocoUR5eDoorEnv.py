@@ -40,12 +40,12 @@ class MujocoUR5eDoorEnv(MujocoUR5eEnvBase):
         self.original_door_pos = self.model.body("door").pos.copy()
         self.door_pos_offsets = np.array(
             [
-                [0.0, -0.06, 0.0],
-                [0.0, -0.03, 0.0],
-                [0.0, 0.0, 0.0],
-                [0.0, 0.03, 0.0],
-                [0.0, 0.06, 0.0],
-                [0.0, 0.09, 0.0],
+                [0.0, -0.09, 0.0],
+                [0.03, 0.0, 0.0],
+                [-0.03, 0.0, 0.0],
+                [0.03, 0.03, 0.0],
+                [-0.03, 0.03, 0.0],
+                [0.0, 0.12, 0.0],
             ]
         )  # [m]
 

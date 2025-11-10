@@ -35,12 +35,12 @@ class MujocoUR5eRingEnv(MujocoUR5eEnvBase):
         self.original_pole_pos = self.model.body("pole").pos.copy()
         self.pole_pos_offsets = np.array(
             [
-                [0.0, 0.0, 0.0],
-                [0.0, 0.04, 0.0],
-                [0.0, 0.08, 0.0],
-                [0.0, 0.12, 0.0],
-                [0.0, 0.16, 0.0],
-                [0.0, 0.20, 0.0],
+                [0.0, -0.04, 0.0],
+                [0.04, 0.08, 0.0],
+                [-0.04, 0.08, 0.0],
+                [0.04, 0.12, 0.0],
+                [-0.04, 0.12, 0.0],
+                [0.0, 0.24, 0.0],
             ]
         )  # [m]
 

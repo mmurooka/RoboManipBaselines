@@ -34,12 +34,12 @@ class MujocoUR5eCableEnv(MujocoUR5eEnvBase):
         self.original_pole_pos = self.model.body("poles").pos.copy()
         self.pole_pos_offsets = np.array(
             [
-                [-0.03, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-                [0.03, 0.0, 0.0],
-                [0.06, 0.0, 0.0],
-                [0.09, 0.0, 0.0],
-                [0.12, 0.0, 0.0],
+                [-0.06, 0.0, 0.0],
+                [0.03, 0.03, 0.0],
+                [0.03, -0.03, 0.0],
+                [0.06, 0.03, 0.0],
+                [0.06, -0.03, 0.0],
+                [0.15, 0.0, 0.0],
             ]
         )  # [m]
 
