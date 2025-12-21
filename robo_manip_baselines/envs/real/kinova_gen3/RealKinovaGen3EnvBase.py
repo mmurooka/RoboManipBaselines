@@ -2,16 +2,14 @@ import time
 from os import path
 
 import numpy as np
+from gymnasium.spaces import Box, Dict
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
 from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
-from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2
+from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Session_pb2
+from kortex_api.RouterClient import RouterClient
+from kortex_api.SessionManager import SessionManager
 from kortex_api.TCPTransport import TCPTransport
 from kortex_api.UDPTransport import UDPTransport
-from kortex_api.RouterClient import RouterClient, RouterClientSendOptions
-from kortex_api.SessionManager import SessionManager
-from kortex_api.autogen.messages import Session_pb2
-from gello.robots.robotiq_gripper import RobotiqGripper
-from gymnasium.spaces import Box, Dict
 
 from robo_manip_baselines.common import ArmConfig
 from robo_manip_baselines.teleop import (
@@ -24,12 +22,13 @@ from ..RealEnvBase import RealEnvBase
 
 
 def norm_180(angle):
-    angle = (angle + np.pi) % (2*np.pi) - np.pi
+    angle = (angle + np.pi) % (2 * np.pi) - np.pi
     return angle
 
+
 def joint_step(c_joint, m_joint, time, time_now):
-    joint = m_joint + (c_joint - m_joint) * time_now/time
-    
+    joint = m_joint + (c_joint - m_joint) * time_now / time
+
     return joint
 
 
@@ -83,11 +82,12 @@ class RealKinovaGen3EnvBase(RealEnvBase):
 
         # Setup robot
         self.init_qpos = init_qpos
-        self.joint_vel_limit = np.deg2rad(191)  # [rad/s]
+        self.joint_vel_limit = np.deg2rad(80)  # [rad/s]
         self.body_config_list = [
             ArmConfig(
                 arm_urdf_path=path.join(
-                    path.dirname(__file__), "../../assets/common/robots/kinovagen3/kinovagen3.urdf"
+                    path.dirname(__file__),
+                    "../../assets/common/robots/kinovagen3/kinovagen3.urdf",
                 ),
                 arm_root_pose=None,
                 ik_eef_joint_id=7,
@@ -104,31 +104,36 @@ class RealKinovaGen3EnvBase(RealEnvBase):
         print(f"[{self.__class__.__name__}] Start connecting the KinovaGen3.")
         self.robot_ip = robot_ip
         self.tcp_transport = TCPTransport()
+        tcp_port = 10000
+        self.tcp_transport.connect(self.robot_ip, tcp_port)
         self.router = RouterClient(self.tcp_transport, RouterClient.basicErrorCallback)
-
-        self.tcp_transport.connect(self.robot_ip, 10000)
 
         self.session_info = Session_pb2.CreateSessionInfo()
         self.session_info.username = "admin"
         self.session_info.password = "admin"
         self.session_info.session_inactivity_timeout = 10000
         self.session_info.connection_inactivity_timeout = 2000
-        self.SessionManager = SessionManager(self.router)
-        self.SessionManager.CreateSession(self.session_info)
-        
+        self.session_manager = SessionManager(self.router)
+        self.session_manager.CreateSession(self.session_info)
+
         self.base = BaseClient(self.router)
-        
+
         self.udp_transport = UDPTransport()
-        self.router_realtime = RouterClient(self.udp_transport, RouterClient.basicErrorCallback)
+        udp_port = 10001
+        self.udp_transport.connect(self.robot_ip, udp_port)
+        self.router_realtime = RouterClient(
+            self.udp_transport, RouterClient.basicErrorCallback
+        )
 
-        self.udp_transport.connect(self.robot_ip, 10001)
-
-        self.session_manager_rt = SessionManager(self.router_realtime)
-        self.session_manager_rt.CreateSession(self.session_info)
+        self.session_manager_realtime = SessionManager(self.router_realtime)
+        self.session_manager_realtime.CreateSession(self.session_info)
 
         self.base_cyclic = BaseCyclicClient(self.router_realtime)
+
         angles = self.base.GetMeasuredJointAngles()
-        self.arm_joint_pos_actual = np.array([norm_180(np.deg2rad(angles.joint_angles[i].value)) for i in range(7)])
+        self.arm_joint_pos_actual = np.array(
+            [norm_180(np.deg2rad(angles.joint_angles[i].value)) for i in range(7)]
+        )  # \todo
         print(f"[{self.__class__.__name__}] Finish connecting the KinovaGen3.")
 
         # Connect to RealSense
@@ -163,8 +168,8 @@ class RealKinovaGen3EnvBase(RealEnvBase):
         print(
             f"[{self.__class__.__name__}] Start moving the robot to the reset position."
         )
-        self._set_action_home(
-            self.init_qpos, duration=None, joint_vel_limit_scale=0.1, wait=True
+        self._set_action_high_level(
+            self.init_qpos, duration=None, joint_vel_limit_scale=0.2, wait=True
         )
         print(
             f"[{self.__class__.__name__}] Finish moving the robot to the reset position."
@@ -172,13 +177,13 @@ class RealKinovaGen3EnvBase(RealEnvBase):
 
     def _set_action(self, action, duration=None, joint_vel_limit_scale=0.5, wait=False):
         start_time = time.time()
-        rate_hz = 1000
-        dt = 1.0 / rate_hz
 
         # Overwrite duration or joint_pos for safety
-        pre_arm_joint_pos = action[self.body_config_list[0].arm_joint_idxes]
-        pre_arm_joint_pos = self.arm_joint_pos_actual + norm_180(pre_arm_joint_pos - self.arm_joint_pos_actual)
-        action[self.body_config_list[0].arm_joint_idxes] = pre_arm_joint_pos
+        arm_joint_pos_command = action[self.body_config_list[0].arm_joint_idxes]
+        arm_joint_pos_command = self.arm_joint_pos_actual + norm_180(
+            arm_joint_pos_command - self.arm_joint_pos_actual
+        )
+        action[self.body_config_list[0].arm_joint_idxes] = arm_joint_pos_command
         action, duration = self.overwrite_command_for_safety(
             action, duration, joint_vel_limit_scale
         )
@@ -199,29 +204,43 @@ class RealKinovaGen3EnvBase(RealEnvBase):
 
         # Send command to KinovaGen3
         arm_joint_pos_command = action[self.body_config_list[0].arm_joint_idxes]
-        dof = len(arm_joint_pos_command)
         while time.time() - start_time < duration:
             cmd = BaseCyclic_pb2.Command()
             t = time.time()
-            for i in range(dof):
-                act = cmd.actuators.add()
-                act.position = np.rad2deg(joint_step(arm_joint_pos_command[i], self.arm_joint_pos_actual[i], duration, t - start_time))
-                act.flags = 1
+            for joint_idx in range(len(arm_joint_pos_command)):
+                actuator = cmd.actuators.add()
+                actuator.position = np.rad2deg(
+                    joint_step(
+                        arm_joint_pos_command[joint_idx],
+                        self.arm_joint_pos_actual[joint_idx],
+                        duration,
+                        t - start_time,
+                    )
+                )
+                actuator.flags = 1
 
             self.base_cyclic.Refresh(cmd, 0)
-            time.sleep(dt)
 
-    def _set_action_home(self, action, duration=None, joint_vel_limit_scale=0.5, wait=False):
+            cyclic_duration = 1e-3
+            time.sleep(cyclic_duration)
+
+    def _set_action_high_level(
+        self, action, duration=None, joint_vel_limit_scale=0.5, wait=False
+    ):
         start_time = time.time()
 
+        # Set high-level mode
         mode = Base_pb2.ServoingModeInformation()
         mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
         self.base.SetServoingMode(mode)
+        time.sleep(0.2)
 
         # Overwrite duration or joint_pos for safety
-        pre_arm_joint_pos = action[self.body_config_list[0].arm_joint_idxes]
-        pre_arm_joint_pos = self.arm_joint_pos_actual + norm_180(pre_arm_joint_pos - self.arm_joint_pos_actual)
-        action[self.body_config_list[0].arm_joint_idxes] = pre_arm_joint_pos
+        arm_joint_pos_command = action[self.body_config_list[0].arm_joint_idxes]
+        arm_joint_pos_command = self.arm_joint_pos_actual + norm_180(
+            arm_joint_pos_command - self.arm_joint_pos_actual
+        )
+        action[self.body_config_list[0].arm_joint_idxes] = arm_joint_pos_command
         action, duration = self.overwrite_command_for_safety(
             action, duration, joint_vel_limit_scale
         )
@@ -229,12 +248,16 @@ class RealKinovaGen3EnvBase(RealEnvBase):
         # Send command to KinovaGen3
         arm_joint_pos_command = action[self.body_config_list[0].arm_joint_idxes]
         action_kinova = Base_pb2.Action()
-        action_kinova.reach_joint_angles.constraint.type = Base_pb2.JOINT_CONSTRAINT_DURATION
+        action_kinova.reach_joint_angles.constraint.type = (
+            Base_pb2.JOINT_CONSTRAINT_DURATION
+        )
         action_kinova.reach_joint_angles.constraint.value = duration
-        for i in range(len(arm_joint_pos_command)):
-            joint_angle = action_kinova.reach_joint_angles.joint_angles.joint_angles.add()
-            joint_angle.joint_identifier = i
-            joint_angle.value = np.rad2deg(arm_joint_pos_command[i])
+        for joint_idx in range(len(arm_joint_pos_command)):
+            joint_angle = (
+                action_kinova.reach_joint_angles.joint_angles.joint_angles.add()
+            )
+            joint_angle.joint_identifier = joint_idx
+            joint_angle.value = np.rad2deg(arm_joint_pos_command[joint_idx])
 
         self.base.ExecuteAction(action_kinova)
 
@@ -253,18 +276,20 @@ class RealKinovaGen3EnvBase(RealEnvBase):
         if wait and elapsed_duration < duration:
             time.sleep(duration - elapsed_duration)
 
+        # Set low-level mode
         mode = Base_pb2.ServoingModeInformation()
         mode.servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
         self.base.SetServoingMode(mode)
+        time.sleep(0.2)
 
     def _get_obs(self):
         # Get state from KinovaGen3
         feedback = self.base_cyclic.RefreshFeedback()
         arm_joint_pos_list = []
         arm_joint_vel_list = []
-        for act in feedback.actuators:
-            arm_joint_pos_list.append(norm_180(np.deg2rad(act.position)))
-            arm_joint_vel_list.append(np.deg2rad(act.velocity))
+        for actuator in feedback.actuators:
+            arm_joint_pos_list.append(norm_180(np.deg2rad(actuator.position)))  # \todo
+            arm_joint_vel_list.append(np.deg2rad(actuator.velocity))
         arm_joint_pos = np.array(arm_joint_pos_list)
         arm_joint_vel = np.array(arm_joint_vel_list)
         self.arm_joint_pos_actual = arm_joint_pos.copy()
@@ -273,18 +298,19 @@ class RealKinovaGen3EnvBase(RealEnvBase):
         gripper_request = Base_pb2.GripperRequest()
         gripper_request.mode = Base_pb2.GRIPPER_POSITION
         gripper_joint_pos = np.array(
-            [self.base.GetMeasuredGripperMovement(gripper_request).finger[0].value], dtype=np.float64
+            [self.base.GetMeasuredGripperMovement(gripper_request).finger[0].value],
+            dtype=np.float64,
         )
         gripper_joint_vel = np.zeros(1)
 
         # Get wrench from force sensor
-        fb_base = feedback.base
-        fx = fb_base.tool_external_wrench_force_x
-        fy = fb_base.tool_external_wrench_force_y
-        fz = fb_base.tool_external_wrench_force_z
-        tx = fb_base.tool_external_wrench_torque_x
-        ty = fb_base.tool_external_wrench_torque_y
-        tz = fb_base.tool_external_wrench_torque_z
+        feedback_base = feedback.base
+        fx = feedback_base.tool_external_wrench_force_x
+        fy = feedback_base.tool_external_wrench_force_y
+        fz = feedback_base.tool_external_wrench_force_z
+        tx = feedback_base.tool_external_wrench_torque_x
+        ty = feedback_base.tool_external_wrench_torque_y
+        tz = feedback_base.tool_external_wrench_torque_z
         wrench = np.array([fx, fy, fz, tx, ty, tz], dtype=np.float64)
 
         return {
