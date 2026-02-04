@@ -16,7 +16,7 @@ class ReachPhase1(ReachPhaseBase):
 class ReachPhase2(ReachPhaseBase):
     def set_target(self):
         target_rot = pin.rpy.rpyToMatrix(-np.pi, 0.0, 0.0)
-        target_pos = np.array([0.0, 0.45, 0.36])
+        target_pos = np.array([0.0, 0.45, 0.365])
         self.target_se3 = pin.SE3(target_rot, target_pos)
         self.duration = 0.7  # [s]
 
