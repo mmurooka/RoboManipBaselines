@@ -1,7 +1,24 @@
 import gymnasium as gym
 import numpy as np
+import pinocchio as pin
 
-from robo_manip_baselines.common import GraspPhaseBase
+from robo_manip_baselines.common import GraspPhaseBase, ReachPhaseBase
+
+
+class ReachPhase1(ReachPhaseBase):
+    def set_target(self):
+        target_rot = pin.rpy.rpyToMatrix(-np.pi, 0.0, 0.0)
+        target_pos = np.array([0.0, 0.45, 0.45])
+        self.target_se3 = pin.SE3(target_rot, target_pos)
+        self.duration = 0.7  # [s]
+
+
+class ReachPhase2(ReachPhaseBase):
+    def set_target(self):
+        target_rot = pin.rpy.rpyToMatrix(-np.pi, 0.0, 0.0)
+        target_pos = np.array([0.0, 0.45, 0.35])
+        self.target_se3 = pin.SE3(target_rot, target_pos)
+        self.duration = 0.7  # [s]
 
 
 class GraspPhase(GraspPhaseBase):
@@ -37,4 +54,4 @@ class OperationRealUR5eDemo:
         )
 
     def get_pre_motion_phases(self):
-        return [GraspPhase(self)]
+        return [ReachPhase1(self), ReachPhase2(self), GraspPhase(self)]
